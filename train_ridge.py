@@ -1,7 +1,3 @@
-"""
-Train Ridge Regression Model for AQI Prediction
-"""
-
 import pandas as pd
 import numpy as np
 from pymongo import MongoClient
@@ -18,173 +14,140 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 load_dotenv()
+
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017/")
 DB_NAME = "aqi_db"
-COLLECTION_NAME = "aqi_features"
+FEATURE_COLLECTION = "aqi_features"
+MODEL_REGISTRY_COLLECTION = "model_registry"
+
 CITY = "Islamabad"
+
 MODEL_REGISTRY_DIR = Path("model_registry")
 MODEL_REGISTRY_DIR.mkdir(exist_ok=True)
 
 def fetch_training_data():
-    """Fetch historical AQI data from MongoDB"""
     print("Fetching training data from MongoDB...")
+    client = MongoClient(MONGODB_URI)
     try:
-        client = MongoClient(MONGODB_URI)
         db = client[DB_NAME]
-        collection = db[COLLECTION_NAME]
-        
+        collection = db[FEATURE_COLLECTION]
+
         records = list(collection.find())
-        
         if not records:
-            print("No records found in MongoDB")
             return pd.DataFrame()
-        
+
         df = pd.DataFrame(records)
-        if '_id' in df.columns:
-            df = df.drop('_id', axis=1)
-        
-        if 'timestamp' in df.columns:
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
-        
+        df.drop(columns=["_id"], inplace=True, errors="ignore")
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+
         print(f"Retrieved {len(df)} records")
         return df
-    
-    except Exception as e:
-        print(f"Error fetching data: {e}")
-        raise
+
     finally:
         client.close()
 
 def prepare_data(df):
-    """Prepare features and target for training"""
-    print("\nPreparing data...")
-    
-    features = ["hour", "day", "month", "day_of_week", "is_weekend", 
-                "pm2_5", "pm10", "temperature", "humidity",
-                "aqi_change", "aqi_3h_avg", "aqi_12h_avg", "pm_ratio"]
+    features = [
+        "hour", "day", "month", "day_of_week", "is_weekend",
+        "pm2_5", "pm10", "temperature", "humidity",
+        "aqi_change", "aqi_3h_avg", "aqi_12h_avg", "pm_ratio"
+    ]
     target = "aqi"
-    
+
     df_clean = df[features + [target]].dropna()
-    
-    print(f"Records after cleaning: {len(df_clean)}")
-    print(f"Features: {len(features)}")
-    
+
     if len(df_clean) < 50:
-        raise ValueError(f"Not enough data. Need ≥50, got {len(df_clean)}")
-    
+        raise ValueError("Not enough data for training")
+
     X = df_clean[features]
     y = df_clean[target]
-    
+
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
     )
-    
+
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
-    
-    print(f"Training set: {len(X_train)} samples")
-    print(f"Test set: {len(X_test)} samples")
-    
+
     return {
-        'X_train': X_train_scaled,
-        'X_test': X_test_scaled,
-        'y_train': y_train,
-        'y_test': y_test,
-        'scaler': scaler,
-        'feature_names': features
+        "X_train": X_train_scaled,
+        "X_test": X_test_scaled,
+        "y_train": y_train,
+        "y_test": y_test,
+        "scaler": scaler,
+        "feature_names": features,
+        "n_train": len(X_train),
+        "n_test": len(X_test)
     }
 
 def train_ridge(data):
-    """Train Ridge Regression model"""
-    print("\nTraining Ridge Regression...")
-    
-    model = Ridge(alpha=1.0)
-    model.fit(data['X_train'], data['y_train'])
-    
+    model = Ridge(
+        alpha=1.0,        # L2 regularization strength
+        solver="auto",
+        random_state=42
+    )
+    model.fit(data["X_train"], data["y_train"])
     return model
 
 def evaluate_model(model, X_test, y_test):
-    """Evaluate model"""
-    y_pred = model.predict(X_test)
-    
-    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-    mae = mean_absolute_error(y_test, y_pred)
-    r2 = r2_score(y_test, y_pred)
-    
-    print(f"\n{'='*50}")
-    print(f"Ridge Regression Performance")
-    print(f"{'='*50}")
-    print(f"  R² Score:   {r2:.4f}")
-    print(f"  RMSE:       {rmse:.4f}")
-    print(f"  MAE:        {mae:.4f}")
-    print(f"{'='*50}")
-    
-    return {'rmse': rmse, 'mae': mae, 'r2': r2}
+    preds = model.predict(X_test)
+    return {
+        "rmse": float(np.sqrt(mean_squared_error(y_test, preds))),
+        "mae": float(mean_absolute_error(y_test, preds)),
+        "r2": float(r2_score(y_test, preds))
+    }
 
 def save_to_registry(model, scaler, data, metrics):
-    """Save model to registry"""
-    print("\nSaving to Model Registry...")
-    
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_dir = MODEL_REGISTRY_DIR / f"ridge_{timestamp}"
-    model_dir.mkdir(exist_ok=True)
-    
-    # Save model
+    model_dir.mkdir()
+
+    # Save model artifacts
     joblib.dump(model, model_dir / "model.pkl")
     joblib.dump(scaler, model_dir / "scaler.pkl")
-    
-    # Save metadata
+
+    # Save metadata locally
     metadata = {
-        'model_name': 'Ridge Regression',
-        'timestamp': datetime.now().isoformat(),
-        'metrics': {
-            'r2': float(metrics['r2']),
-            'rmse': float(metrics['rmse']),
-            'mae': float(metrics['mae'])
-        },
-        'data_info': {
-            'features': data['feature_names'],
-            'n_training_samples': len(data['X_train']),
-            'n_test_samples': len(data['X_test']),
-            'city': CITY
-        }
+        "model_name": "RidgeRegression",
+        "city": CITY,
+        "trained_at": datetime.now().isoformat(),
+        "metrics": metrics,
+        "features": data["feature_names"],
+        "n_training_samples": data["n_train"],
+        "n_test_samples": data["n_test"],
+        "model_path": str(model_dir)
     }
-    
-    with open(model_dir / "metadata.json", 'w') as f:
+
+    with open(model_dir / "metadata.json", "w") as f:
         json.dump(metadata, f, indent=2)
-    
-    with open(model_dir / "features.json", 'w') as f:
-        json.dump({'features': data['feature_names']}, f, indent=2)
-    
-    print(f"Saved to: {model_dir}")
-    return model_dir
+
+    # Save metadata to MongoDB
+    client = MongoClient(MONGODB_URI)
+    try:
+        db = client[DB_NAME]
+        registry = db[MODEL_REGISTRY_COLLECTION]
+        registry.insert_one(metadata)
+        print("Model metadata saved to MongoDB registry")
+    finally:
+        client.close()
+
+    return model_dir, metadata
 
 def main():
-    print("\n" + "="*50)
-    print("TRAINING RIDGE REGRESSION MODEL")
-    print("="*50)
-    
-    try:
-        df = fetch_training_data()
-        if len(df) == 0:
-            print(" No data available!")
-            return
-        
-        data = prepare_data(df)
-        model = train_ridge(data)
-        metrics = evaluate_model(model, data['X_test'], data['y_test'])
-        model_dir = save_to_registry(model, data['scaler'], data, metrics)
-        
-        print("\n" + "="*50)
-        print("="*50)
-        print(f"Saved to: {model_dir}")
-        print(f"R² Score: {metrics['r2']:.4f}")
-        print("="*50)
-        
-    except Exception as e:
-        print(f"\n Error: {e}")
-        raise
+    df = fetch_training_data()
+    if df.empty:
+        print("No data found. Run feature pipeline first.")
+        return
+
+    data = prepare_data(df)
+    model = train_ridge(data)
+    metrics = evaluate_model(model, data["X_test"], data["y_test"])
+    model_dir, meta = save_to_registry(model, data["scaler"], data, metrics)
+
+    print("\nTraining complete")
+    print(f"Model saved at: {model_dir}")
+    print(f"Metrics: {metrics}")
 
 if __name__ == "__main__":
     main()
