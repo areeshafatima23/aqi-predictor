@@ -24,5 +24,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run feature pipeline
-        run: |
-          python pipeline.py
+        run: python pipeline.py
+        env:
+          OPENWEATHER_API_KEY: ${{ secrets.OPENWEATHER_API_KEY }}
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
