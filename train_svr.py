@@ -49,10 +49,10 @@ def fetch_training_data():
 def prepare_data(df):
     features = [
         "hour", "day", "month", "day_of_week", "is_weekend",
-        "pm2_5", "pm10", "temperature", "humidity",
+        "pm10", "temperature", "humidity",
         "aqi_change", "aqi_3h_avg", "aqi_12h_avg", "pm_ratio"
     ]
-    target = "aqi"
+    target = "pm2_5"
 
     df_clean = df[features + [target]].dropna()
 
