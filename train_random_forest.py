@@ -45,13 +45,17 @@ def fetch_training_data():
 
     finally:
         client.close()
+
+
 def prepare_data(df):
+    
     features = [
         "hour", "day", "month", "day_of_week", "is_weekend",
-        "pm2_5", "pm10", "temperature", "humidity",
+        "pm10", "temperature", "humidity",
         "aqi_change", "aqi_3h_avg", "aqi_12h_avg", "pm_ratio"
     ]
-    target = "aqi"
+
+    target = "pm2_5"
 
     df_clean = df[features + [target]].dropna()
 
@@ -82,9 +86,11 @@ def prepare_data(df):
 
 def train_random_forest(data):
     model = RandomForestRegressor(
-        n_estimators=100,
-        max_depth=10,
-        random_state=42
+        n_estimators=200,
+        max_depth=12,
+        min_samples_leaf=5,
+        random_state=42,
+        n_jobs=-1
     )
     model.fit(data["X_train"], data["y_train"])
     return model
@@ -96,22 +102,22 @@ def evaluate_model(model, X_test, y_test):
         "mae": float(mean_absolute_error(y_test, preds)),
         "r2": float(r2_score(y_test, preds))
     }
+
 def save_to_registry(model, scaler, data, metrics):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_dir = MODEL_REGISTRY_DIR / f"random_forest_{timestamp}"
     model_dir.mkdir()
 
-    # Save model artifacts
     joblib.dump(model, model_dir / "model.pkl")
     joblib.dump(scaler, model_dir / "scaler.pkl")
 
-    # Save metadata locally
     metadata = {
-        "model_name": "RandomForestRegressor",
+        "model_name": "RandomForest",
         "city": CITY,
         "trained_at": datetime.now().isoformat(),
         "metrics": metrics,
         "features": data["feature_names"],
+        "target": "pm2_5",
         "n_training_samples": data["n_train"],
         "n_test_samples": data["n_test"],
         "model_path": str(model_dir)
@@ -120,7 +126,6 @@ def save_to_registry(model, scaler, data, metrics):
     with open(model_dir / "metadata.json", "w") as f:
         json.dump(metadata, f, indent=2)
 
-    # Save metadata to MongoDB 
     client = MongoClient(MONGODB_URI)
     try:
         db = client[DB_NAME]
@@ -146,6 +151,7 @@ def main():
     print("\nTraining complete")
     print(f"Model saved at: {model_dir}")
     print(f"Metrics: {metrics}")
+
 
 if __name__ == "__main__":
     main()

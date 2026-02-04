@@ -25,42 +25,34 @@ CITY = "Islamabad"
 MODEL_REGISTRY_DIR = Path("model_registry")
 MODEL_REGISTRY_DIR.mkdir(exist_ok=True)
 
+# ===============================
+# DATA
+# ===============================
 def fetch_training_data():
-    print("Fetching training data from MongoDB...")
     client = MongoClient(MONGODB_URI)
     try:
-        db = client[DB_NAME]
-        collection = db[FEATURE_COLLECTION]
-
-        records = list(collection.find())
-        if not records:
-            return pd.DataFrame()
-
-        df = pd.DataFrame(records)
+        df = pd.DataFrame(list(client[DB_NAME][FEATURE_COLLECTION].find()))
         df.drop(columns=["_id"], inplace=True, errors="ignore")
         df["timestamp"] = pd.to_datetime(df["timestamp"])
-
-        print(f"Retrieved {len(df)} records")
         return df
-
     finally:
         client.close()
 
+# ===============================
+# PREPARE DATA (PM2.5 TARGET)
+# ===============================
 def prepare_data(df):
     features = [
         "hour", "day", "month", "day_of_week", "is_weekend",
-        "pm2_5", "pm10", "temperature", "humidity",
-        "aqi_change", "aqi_3h_avg", "aqi_12h_avg", "pm_ratio"
+        "pm10", "temperature", "humidity", "pm_ratio"
     ]
-    target = "aqi"
 
-    df_clean = df[features + [target]].dropna()
+    target = "pm2_5"
 
-    if len(df_clean) < 50:
-        raise ValueError("Not enough data for training")
+    df = df[features + [target]].dropna()
 
-    X = df_clean[features]
-    y = df_clean[target]
+    X = df[features]
+    y = df[target]  # 1D Series ✔
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
@@ -70,27 +62,20 @@ def prepare_data(df):
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
 
-    return {
-        "X_train": X_train_scaled,
-        "X_test": X_test_scaled,
-        "y_train": y_train,
-        "y_test": y_test,
-        "scaler": scaler,
-        "feature_names": features,
-        "n_train": len(X_train),
-        "n_test": len(X_test)
-    }
+    return X_train_scaled, X_test_scaled, y_train, y_test, scaler, features
 
-def train_ridge(data):
-    model = Ridge(
-        alpha=1.0,        # L2 regularization strength
-        solver="auto",
-        random_state=42
-    )
-    model.fit(data["X_train"], data["y_train"])
+# ===============================
+# TRAIN
+# ===============================
+def train_ridge(X_train, y_train):
+    model = Ridge(alpha=1.0)
+    model.fit(X_train, y_train)
     return model
 
-def evaluate_model(model, X_test, y_test):
+# ===============================
+# EVAL
+# ===============================
+def evaluate(model, X_test, y_test):
     preds = model.predict(X_test)
     return {
         "rmse": float(np.sqrt(mean_squared_error(y_test, preds))),
@@ -98,56 +83,43 @@ def evaluate_model(model, X_test, y_test):
         "r2": float(r2_score(y_test, preds))
     }
 
-def save_to_registry(model, scaler, data, metrics):
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    model_dir = MODEL_REGISTRY_DIR / f"ridge_{timestamp}"
-    model_dir.mkdir()
+# ===============================
+# SAVE
+# ===============================
+def save(model, scaler, features, metrics):
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    path = MODEL_REGISTRY_DIR / f"ridge_pm25_{ts}"
+    path.mkdir()
 
-    # Save model artifacts
-    joblib.dump(model, model_dir / "model.pkl")
-    joblib.dump(scaler, model_dir / "scaler.pkl")
+    joblib.dump(model, path / "model.pkl")
+    joblib.dump(scaler, path / "scaler.pkl")
 
-    # Save metadata locally
-    metadata = {
+    meta = {
         "model_name": "RidgeRegression",
+        "target": "pm2_5",
         "city": CITY,
         "trained_at": datetime.now().isoformat(),
         "metrics": metrics,
-        "features": data["feature_names"],
-        "n_training_samples": data["n_train"],
-        "n_test_samples": data["n_test"],
-        "model_path": str(model_dir)
+        "features": features,
+        "model_path": str(path)
     }
 
-    with open(model_dir / "metadata.json", "w") as f:
-        json.dump(metadata, f, indent=2)
+    with open(path / "metadata.json", "w") as f:
+        json.dump(meta, f, indent=2)
 
-    # Save metadata to MongoDB
-    client = MongoClient(MONGODB_URI)
-    try:
-        db = client[DB_NAME]
-        registry = db[MODEL_REGISTRY_COLLECTION]
-        registry.insert_one(metadata)
-        print("Model metadata saved to MongoDB registry")
-    finally:
-        client.close()
+    MongoClient(MONGODB_URI)[DB_NAME][MODEL_REGISTRY_COLLECTION].insert_one(meta)
 
-    return model_dir, metadata
-
+# ===============================
+# MAIN
+# ===============================
 def main():
     df = fetch_training_data()
-    if df.empty:
-        print("No data found. Run feature pipeline first.")
-        return
+    X_tr, X_te, y_tr, y_te, scaler, features = prepare_data(df)
+    model = train_ridge(X_tr, y_tr)
+    metrics = evaluate(model, X_te, y_te)
+    save(model, scaler, features, metrics)
 
-    data = prepare_data(df)
-    model = train_ridge(data)
-    metrics = evaluate_model(model, data["X_test"], data["y_test"])
-    model_dir, meta = save_to_registry(model, data["scaler"], data, metrics)
-
-    print("\nTraining complete")
-    print(f"Model saved at: {model_dir}")
-    print(f"Metrics: {metrics}")
+    print("Training done:", metrics)
 
 if __name__ == "__main__":
     main()

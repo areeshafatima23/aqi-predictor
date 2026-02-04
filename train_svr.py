@@ -15,6 +15,9 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 load_dotenv()
 
+# ===============================
+# CONFIG
+# ===============================
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017/")
 DB_NAME = "aqi_db"
 FEATURE_COLLECTION = "aqi_features"
@@ -25,6 +28,10 @@ CITY = "Islamabad"
 MODEL_REGISTRY_DIR = Path("model_registry")
 MODEL_REGISTRY_DIR.mkdir(exist_ok=True)
 
+
+# ===============================
+# FETCH DATA
+# ===============================
 def fetch_training_data():
     print("Fetching training data from MongoDB...")
     client = MongoClient(MONGODB_URI)
@@ -46,13 +53,20 @@ def fetch_training_data():
     finally:
         client.close()
 
+
+# ===============================
+# PREPARE DATA
+# ===============================
 def prepare_data(df):
+    # ❗ pm2_5 REMOVED from features
     features = [
         "hour", "day", "month", "day_of_week", "is_weekend",
-        "pm2_5","pm10", "temperature", "humidity",
+        "pm10", "temperature", "humidity",
         "aqi_change", "aqi_3h_avg", "aqi_12h_avg", "pm_ratio"
     ]
-    target = "aqi"
+
+    # ✅ PM2.5 is the regression target
+    target = "pm2_5"
 
     df_clean = df[features + [target]].dropna()
 
@@ -81,15 +95,24 @@ def prepare_data(df):
         "n_test": len(X_test)
     }
 
+
+# ===============================
+# TRAIN MODEL
+# ===============================
 def train_svr(data):
     model = SVR(
         kernel="rbf",
         C=100,
-        gamma="scale"
+        gamma="scale",
+        epsilon=0.1
     )
     model.fit(data["X_train"], data["y_train"])
     return model
 
+
+# ===============================
+# EVALUATION
+# ===============================
 def evaluate_model(model, X_test, y_test):
     preds = model.predict(X_test)
     return {
@@ -98,22 +121,25 @@ def evaluate_model(model, X_test, y_test):
         "r2": float(r2_score(y_test, preds))
     }
 
+
+# ===============================
+# SAVE TO REGISTRY
+# ===============================
 def save_to_registry(model, scaler, data, metrics):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_dir = MODEL_REGISTRY_DIR / f"svr_{timestamp}"
     model_dir.mkdir()
 
-    # Save model artifacts
     joblib.dump(model, model_dir / "model.pkl")
     joblib.dump(scaler, model_dir / "scaler.pkl")
 
-    # Save metadata locally
     metadata = {
-        "model_name": "SupportVectorRegression",
+        "model_name": "SVR",
         "city": CITY,
         "trained_at": datetime.now().isoformat(),
         "metrics": metrics,
         "features": data["feature_names"],
+        "target": "pm2_5",
         "n_training_samples": data["n_train"],
         "n_test_samples": data["n_test"],
         "model_path": str(model_dir)
@@ -122,7 +148,6 @@ def save_to_registry(model, scaler, data, metrics):
     with open(model_dir / "metadata.json", "w") as f:
         json.dump(metadata, f, indent=2)
 
-    # Save metadata to MongoDB
     client = MongoClient(MONGODB_URI)
     try:
         db = client[DB_NAME]
@@ -134,6 +159,10 @@ def save_to_registry(model, scaler, data, metrics):
 
     return model_dir, metadata
 
+
+# ===============================
+# MAIN
+# ===============================
 def main():
     df = fetch_training_data()
     if df.empty:
@@ -148,6 +177,7 @@ def main():
     print("\nTraining complete")
     print(f"Model saved at: {model_dir}")
     print(f"Metrics: {metrics}")
+
 
 if __name__ == "__main__":
     main()
