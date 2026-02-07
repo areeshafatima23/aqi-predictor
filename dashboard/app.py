@@ -1,18 +1,15 @@
 import streamlit as st
 import requests
 import pandas as pd
-import matplotlib.pyplot as plt
+import numpy as np
+import plotly.graph_objects as go
 
 API_URL = "http://127.0.0.1:8000/predict"
 
 st.set_page_config(page_title="AQI Forecast", layout="wide")
 
 st.markdown(
-    """
-    <h1 style="text-align:center;">
-        AQI Forecast Dashboard – Islamabad
-    </h1>
-    """,
+    "<h1 style='text-align:center;'>AQI Forecast Dashboard – Islamabad</h1>",
     unsafe_allow_html=True
 )
 
@@ -20,7 +17,7 @@ col1, col2, col3 = st.columns([1, 1, 1])
 with col2:
     fetch = st.button("Get Latest Forecast", use_container_width=True)
 
-# AQI color mapping
+# AQI CATEGORY COLORS
 AQI_COLORS = {
     "Good": "#00e400",
     "Moderate": "#ffff00",
@@ -35,22 +32,31 @@ if fetch:
         response = requests.get(API_URL)
 
     if response.status_code != 200:
-        st.error("API not running. Start FastAPI first.")
+        st.error("Prediction API is not reachable.")
         st.stop()
 
     data = response.json()
     forecast = pd.DataFrame(data["forecast"])
-
     forecast["date"] = pd.to_datetime(forecast["date"])
     forecast["day"] = forecast["date"].dt.day_name()
     forecast["date_str"] = forecast["date"].dt.strftime("%d %b %Y")
 
-    st.subheader("Model Info")
-    st.write(f"**Model Used:** {data['model_used']}")
-    st.write(f"**RMSE:** {round(data['rmse'], 3)}")
-    st.caption("Model is selected automatically based on lowest validation error.")
+    st.markdown(
+        f"""
+        <div style="text-align:center; margin-top:10px;">
+            <b>Model Used:</b> {data['model_used']} &nbsp; | &nbsp;
+            <b>RMSE:</b> {round(data['rmse'], 3)}
+            <br>
+            <span style="font-size:13px;">
+                Model selected automatically based on lowest validation error
+            </span>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
     st.divider()
+
     st.subheader("3-Day AQI Forecast")
 
     cols = st.columns(3)
@@ -75,35 +81,73 @@ if fetch:
             )
 
     st.divider()
-    st.subheader("AQI Trend Analysis")
 
-    fig, ax = plt.subplots(figsize=(11, 4))
+    hourly_blocks = []
 
-    ax.axhspan(0, 50, color="#00e400", alpha=0.2, label="Good")
-    ax.axhspan(50, 100, color="#ffff00", alpha=0.2, label="Moderate")
-    ax.axhspan(100, 150, color="#ff7e00", alpha=0.2, label="Unhealthy (Sensitive)")
-    ax.axhspan(150, 200, color="#ff0000", alpha=0.2, label="Unhealthy")
-    ax.axhspan(200, 300, color="#8f3f97", alpha=0.2, label="Very Unhealthy")
-    ax.axhspan(300, 500, color="#7e0023", alpha=0.2, label="Hazardous")
+    for _, row in forecast.iterrows():
+        hours = pd.date_range(start=row["date"], periods=24, freq="H")
+        hourly_blocks.append(
+            pd.DataFrame({
+                "datetime": hours,
+                "aqi": np.full(24, row["aqi"])
+            })
+        )
 
-    ax.plot(
-        forecast["date"],
-        forecast["aqi"],
-        color="black",
-        linewidth=2,
-        marker="o",
-        label="AQI Forecast"
+    hourly_df = pd.concat(hourly_blocks).reset_index(drop=True)
+    hourly_df["aqi_smooth"] = hourly_df["aqi"].rolling(
+        window=6, center=True, min_periods=1
+    ).mean()
+    fig = go.Figure()
+
+    fig.add_hrect(y0=0, y1=50, fillcolor="#00e400", opacity=0.15, line_width=0)
+    fig.add_hrect(y0=50, y1=100, fillcolor="#ffff00", opacity=0.15, line_width=0)
+    fig.add_hrect(y0=100, y1=150, fillcolor="#ff7e00", opacity=0.15, line_width=0)
+    fig.add_hrect(y0=150, y1=200, fillcolor="#ff0000", opacity=0.15, line_width=0)
+    fig.add_hrect(y0=200, y1=300, fillcolor="#8f3f97", opacity=0.15, line_width=0)
+    fig.add_hrect(y0=300, y1=500, fillcolor="#7e0023", opacity=0.15, line_width=0)
+
+    fig.add_trace(
+        go.Scatter(
+            x=hourly_df["datetime"],
+            y=hourly_df["aqi_smooth"],
+            mode="lines+markers",
+            line=dict(color="red", width=3),
+            marker=dict(size=6),
+            name="Predicted AQI",
+            hovertemplate=
+                "<b>%{x|%a, %d %b %Y %H:%M}</b><br>"
+                "AQI: %{y:.1f}<extra></extra>"
+        )
     )
 
-    ax.set_xticks(forecast["date"])
-    ax.set_xticklabels(
-        [d.strftime("%a, %d %b") for d in forecast["date"]],
-        rotation=30
+    fig.update_layout(
+        title="3 Day AQI Trend",
+        xaxis_title="Time",
+        yaxis_title="AQI",
+        yaxis=dict(range=[0, 500]),
+        hovermode="x unified",
+        margin=dict(l=40, r=40, t=60, b=40)
     )
-    ax.set_ylim(0, 500)
-    ax.set_ylabel("AQI")
-    ax.set_xlabel("Date")
-    ax.grid(True, linestyle="--", alpha=0.3)
-    ax.legend(loc="upper right")
 
-    st.pyplot(fig)
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("### AQI Categories")
+
+    legend_cols = st.columns(6)
+    for col, (label, color) in zip(legend_cols, AQI_COLORS.items()):
+        with col:
+            st.markdown(
+                f"""
+                <div style="
+                    background-color:{color};
+                    padding:10px;
+                    border-radius:8px;
+                    text-align:center;
+                    font-size:13px;
+                    color:black;
+                ">
+                    {label}
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
