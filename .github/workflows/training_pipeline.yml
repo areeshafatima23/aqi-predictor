@@ -25,7 +25,6 @@ jobs:
 
       - name: Train models
         run: |
-          python train_logistic.py
           python train_random_forest.py
           python train_ridge.py
           python train_svr.py
