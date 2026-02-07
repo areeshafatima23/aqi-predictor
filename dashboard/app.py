@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import requests
+import os
 
 st.set_page_config(page_title="AQI Forecast", layout="wide")
 st.markdown("<h1 style='text-align:center;'>AQI Forecast Dashboard – Islamabad</h1>", unsafe_allow_html=True)
@@ -33,7 +34,7 @@ def get_aqi_category(aqi):
 if fetch:
     with st.spinner("Loading predictions..."):
         try:
-            API_URL = st.secrets.get("API_URL", "http://127.0.0.1:8000/predict")
+            API_URL = os.getenv("API_URL", "http://127.0.0.1:8000/predict")
             response = requests.get(API_URL)
             if response.status_code != 200:
                 st.error("Prediction API is not reachable.")
