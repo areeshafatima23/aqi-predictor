@@ -9,5 +9,6 @@ matplotlib
 requests
 python-dotenv
 pymongo
+plotly
 
 
