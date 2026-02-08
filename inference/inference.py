@@ -8,8 +8,11 @@ from datetime import datetime, timedelta
 
 load_dotenv()
 
+# BASE_DIR points to the repo root
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MONGODB_URI = os.getenv("MONGODB_URI")
+
+# MongoDB Atlas URI and database/collections
+MONGODB_URI = os.getenv("MONGODB_URI")  
 DB_NAME = os.getenv("DB_NAME", "aqi_db")
 FEATURE_COLLECTION = os.getenv("FEATURE_COLLECTION", "aqi_features")
 MODEL_REGISTRY_COLLECTION = os.getenv("MODEL_REGISTRY_COLLECTION", "model_registry")
@@ -50,18 +53,17 @@ def get_best_model():
             {"target": "pm2_5"},
             sort=[("metrics.rmse", 1)]
         )
-
         if not best:
             raise RuntimeError("No PM2.5 model found in registry")
 
-        relative_model_path = best["model_path"]
+        # Fix Windows paths → Linux-friendly
+        relative_model_path = best["model_path"].replace("\\", "/")
         absolute_model_path = os.path.join(BASE_DIR, relative_model_path)
 
         model = joblib.load(os.path.join(absolute_model_path, "model.pkl"))
         scaler = joblib.load(os.path.join(absolute_model_path, "scaler.pkl"))
 
         return model, scaler, best
-
     finally:
         client.close()
 
@@ -69,16 +71,13 @@ def fetch_latest_features(feature_names, window=24):
     client = MongoClient(MONGODB_URI)
     try:
         collection = client[DB_NAME][FEATURE_COLLECTION]
-        df = pd.DataFrame(
-            list(collection.find().sort("timestamp", -1).limit(window))
-        )
+        df = pd.DataFrame(list(collection.find().sort("timestamp", -1).limit(window)))
 
         if df.empty:
             raise RuntimeError("No feature data found for inference")
 
         df.drop(columns=["_id"], inplace=True, errors="ignore")
         return df[feature_names]
-
     finally:
         client.close()
 
@@ -92,14 +91,13 @@ def run_inference():
     pm25_preds = model.predict(X_scaled)
     pm25_preds = np.clip(pm25_preds, 0.1, 500)
 
-    recent_pm25 = np.mean(pm25_preds[-8:])
+    recent_pm25 = np.mean(pm25_preds[-8:])  # last 8 hours avg
     today = datetime.now().date()
 
     forecast = []
     for i in range(3):
         pm25_day = recent_pm25 * (1 + 0.02 * i)
         pm25_day = round(float(pm25_day), 2)
-
         aqi = round(pm25_to_aqi(pm25_day), 2)
 
         forecast.append({
