@@ -1,0 +1,28 @@
+{
+  "model_name": "SupportVectorRegression",
+  "city": "Islamabad",
+  "trained_at": "2026-01-27T19:33:14.976701",
+  "metrics": {
+    "rmse": 0.09177584533800805,
+    "mae": 0.06109306490058196,
+    "r2": 0.9486974811179221
+  },
+  "features": [
+    "hour",
+    "day",
+    "month",
+    "day_of_week",
+    "is_weekend",
+    "pm2_5",
+    "pm10",
+    "temperature",
+    "humidity",
+    "aqi_change",
+    "aqi_3h_avg",
+    "aqi_12h_avg",
+    "pm_ratio"
+  ],
+  "n_training_samples": 1709,
+  "n_test_samples": 428,
+  "model_path": "model_registry\\svr_20260127_193314"
+}

@@ -1,0 +1,23 @@
+{
+  "model_name": "RidgeRegression",
+  "target": "pm2_5",
+  "city": "Islamabad",
+  "trained_at": "2026-02-02T20:51:12.660572",
+  "metrics": {
+    "rmse": 10.915960951729794,
+    "mae": 8.167727721986301,
+    "r2": 0.9930004868071702
+  },
+  "features": [
+    "hour",
+    "day",
+    "month",
+    "day_of_week",
+    "is_weekend",
+    "pm10",
+    "temperature",
+    "humidity",
+    "pm_ratio"
+  ],
+  "model_path": "model_registry\\ridge_pm25_20260202_205112"
+}

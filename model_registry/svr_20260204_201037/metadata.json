@@ -1,0 +1,28 @@
+{
+  "model_name": "SVR",
+  "city": "Islamabad",
+  "trained_at": "2026-02-04T20:10:37.373233",
+  "metrics": {
+    "rmse": 7.234584215511556,
+    "mae": 2.166802628066284,
+    "r2": 0.9964568759476577
+  },
+  "features": [
+    "hour",
+    "day",
+    "month",
+    "day_of_week",
+    "is_weekend",
+    "pm10",
+    "temperature",
+    "humidity",
+    "aqi_change",
+    "aqi_3h_avg",
+    "aqi_12h_avg",
+    "pm_ratio"
+  ],
+  "target": "pm2_5",
+  "n_training_samples": 1825,
+  "n_test_samples": 457,
+  "model_path": "model_registry\\svr_20260204_201037"
+}

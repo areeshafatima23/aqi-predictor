@@ -1,0 +1,45 @@
+{
+  "model_name": "LogisticRegression_MultiClass",
+  "city": "Islamabad",
+  "trained_at": "2026-01-27T19:42:44.849008",
+  "metrics": {
+    "rmse": 0.0,
+    "mae": 0.0,
+    "r2": 1.0,
+    "confusion_matrix": [
+      [
+        14,
+        0,
+        0
+      ],
+      [
+        0,
+        19,
+        0
+      ],
+      [
+        0,
+        0,
+        395
+      ]
+    ]
+  },
+  "features": [
+    "hour",
+    "day",
+    "month",
+    "day_of_week",
+    "is_weekend",
+    "pm2_5",
+    "pm10",
+    "temperature",
+    "humidity",
+    "aqi_change",
+    "aqi_3h_avg",
+    "aqi_12h_avg",
+    "pm_ratio"
+  ],
+  "n_training_samples": 1709,
+  "n_test_samples": 428,
+  "model_path": "model_registry\\logistic_multiclass_20260127_194244"
+}
