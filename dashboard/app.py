@@ -2,8 +2,10 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-import requests
 import os
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from inference.inference import run_inference, aqi_category
 
 st.set_page_config(page_title="AQI Forecast", layout="wide")
 st.markdown("<h1 style='text-align:center;'>AQI Forecast Dashboard – Islamabad</h1>", unsafe_allow_html=True)
@@ -12,6 +14,7 @@ col1, col2, col3 = st.columns([1, 1, 1])
 with col2:
     fetch = st.button("Get Latest Forecast", use_container_width=True)
 
+# AQI color mapping
 AQI_COLORS = {
     "Good": "#00e400",
     "Moderate": "#ffff00",
@@ -21,40 +24,23 @@ AQI_COLORS = {
     "Hazardous": "#7e0023"
 }
 
-
-def get_aqi_category(aqi):
-    if aqi <= 50: return "Good"
-    if aqi <= 100: return "Moderate"
-    if aqi <= 150: return "Unhealthy (Sensitive)"
-    if aqi <= 200: return "Unhealthy"
-    if aqi <= 300: return "Very Unhealthy"
-    return "Hazardous"
-
-
 if fetch:
     with st.spinner("Loading predictions..."):
         try:
-            API_URL = os.getenv("API_URL", "http://127.0.0.1:8000/predict")
-            response = requests.get(API_URL)
-            if response.status_code != 200:
-                st.error("Prediction API is not reachable.")
-                st.stop()
-            data = response.json()
+            # Directly run inference (no API)
+            forecast, model_info = run_inference()
         except Exception as e:
             st.error(f"Error fetching forecast: {e}")
             st.stop()
 
-    forecast = pd.DataFrame(data["forecast"])
+    forecast = pd.DataFrame(forecast)
     forecast["date"] = pd.to_datetime(forecast["date"])
     forecast["day"] = forecast["date"].dt.day_name()
     forecast["date_str"] = forecast["date"].dt.strftime("%d %b %Y")
-    forecast["category"] = forecast["aqi"].apply(get_aqi_category)
 
     # Model info
-    model_info = data.get("model_info", {})
     model_name = model_info.get("model_name", "Unknown")
     rmse = model_info.get("metrics", {}).get("rmse", None)
-
     st.markdown(
         f"<div style='text-align:center; margin-top:10px;'>"
         f"<b>Model Used:</b> {model_name} &nbsp; | &nbsp;"
@@ -80,7 +66,7 @@ if fetch:
 
     st.divider()
 
-    # Hourly trend chart
+    # Hourly trend chart (simplified as daily constant for demo)
     hourly_blocks = []
     for _, row in forecast.iterrows():
         hours = pd.date_range(start=row["date"], periods=24, freq="H")
@@ -90,6 +76,7 @@ if fetch:
     hourly_df["aqi_smooth"] = hourly_df["aqi"].rolling(window=6, center=True, min_periods=1).mean()
 
     fig = go.Figure()
+    # AQI background ranges
     fig.add_hrect(y0=0, y1=50, fillcolor="#00e400", opacity=0.15, line_width=0)
     fig.add_hrect(y0=50, y1=100, fillcolor="#ffff00", opacity=0.15, line_width=0)
     fig.add_hrect(y0=100, y1=150, fillcolor="#ff7e00", opacity=0.15, line_width=0)
@@ -123,4 +110,7 @@ if fetch:
     legend_cols = st.columns(6)
     for col, (label, color) in zip(legend_cols, AQI_COLORS.items()):
         with col:
-            st.markdown(f"<div style='background-color:{color}; padding:10px; border-radius:8px; text-align:center; font-size:13px; color:black;'>{label}</div>", unsafe_allow_html=True)
+            st.markdown(
+                f"<div style='background-color:{color}; padding:10px; border-radius:8px; text-align:center; font-size:13px; color:black;'>{label}</div>",
+                unsafe_allow_html=True
+            )
