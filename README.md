@@ -20,6 +20,35 @@ The app predicts AQI values, displays pollution trends, and categorizes air qual
 
 
 ## Project Structure
+aqi-predictor/
+│
+├── .devcontainer/              # Dev container config 
+├── .github/workflows/          # GitHub Actions (model training, CI)
+├── .streamlit/                 # Streamlit Cloud config
+│
+├── dashboard/
+│   └── app.py                  # Streamlit entry point
+│
+├── inference/
+│   ├── __init__.py
+│   └── inference.py            # Model loading + prediction logic
+│
+├── model_registry/             # Trained models
+│
+├── shap_analysis/              # SHAP explainability 
+│
+├── train_random_forest.py
+├── train_ridge.py
+├── train_svr.py                # Model training scripts
+│
+├── pipeline.py                 # Feature pipeline
+├── predict_aqi.py              # Local prediction
+├── backfill_historical_data.py
+│
+├── aqi_ridge_model.pkl        
+├── aqi_ridge_scaler.pkl
+│
+├── requirements.txt
 
 
 ## How to Run Locally 
