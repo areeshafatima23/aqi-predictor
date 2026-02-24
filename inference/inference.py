@@ -1,4 +1,5 @@
 import os
+import pickle
 import joblib
 import pandas as pd
 import numpy as np
@@ -49,6 +50,42 @@ def get_best_model():
     client = MongoClient(MONGODB_URI)
     try:
         registry = client[DB_NAME][MODEL_REGISTRY_COLLECTION]
+
+        # Today's date range (midnight to midnight)
+        today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = today_start + timedelta(days=1)
+        today_str_start = today_start.isoformat()
+        today_str_end = today_end.isoformat()
+
+        # --- Priority 1: best model trained TODAY with binary data ---
+        best = registry.find_one(
+            {
+                "target": "pm2_5",
+                "model_binary": {"$exists": True},
+                "trained_at": {"$gte": today_str_start, "$lt": today_str_end}
+            },
+            sort=[("metrics.rmse", 1)]
+        )
+
+        if best:
+            model = pickle.loads(best["model_binary"])
+            scaler = pickle.loads(best["scaler_binary"])
+            print(f"Loaded TODAY's best model '{best['model_name']}' (RMSE={best['metrics']['rmse']:.4f}) from MongoDB binary")
+            return model, scaler, best
+
+        # --- Priority 2: best model with binary data (any day) ---
+        best = registry.find_one(
+            {"target": "pm2_5", "model_binary": {"$exists": True}},
+            sort=[("metrics.rmse", 1)]
+        )
+
+        if best:
+            model = pickle.loads(best["model_binary"])
+            scaler = pickle.loads(best["scaler_binary"])
+            print(f"No model trained today; loaded best available '{best['model_name']}' (RMSE={best['metrics']['rmse']:.4f}) from MongoDB binary")
+            return model, scaler, best
+
+        # --- Fallback: old entries without binary (local path) ---
         best = registry.find_one(
             {"target": "pm2_5"},
             sort=[("metrics.rmse", 1)]
@@ -56,12 +93,11 @@ def get_best_model():
         if not best:
             raise RuntimeError("No PM2.5 model found in registry")
 
-        # Fix Windows paths → Linux-friendly
         relative_model_path = best["model_path"].replace("\\", "/")
         absolute_model_path = os.path.join(BASE_DIR, relative_model_path)
-
         model = joblib.load(os.path.join(absolute_model_path, "model.pkl"))
         scaler = joblib.load(os.path.join(absolute_model_path, "scaler.pkl"))
+        print(f"Loaded model '{best['model_name']}' from local path (no binary in DB)")
 
         return model, scaler, best
     finally:

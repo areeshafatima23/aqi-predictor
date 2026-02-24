@@ -4,8 +4,10 @@ from pymongo import MongoClient
 from dotenv import load_dotenv
 import os
 import json
+import pickle
 import joblib
 from datetime import datetime
+from bson import Binary
 from pathlib import Path
 
 from sklearn.linear_model import Ridge
@@ -94,6 +96,10 @@ def save(model, scaler, features, metrics):
     joblib.dump(model, path / "model.pkl")
     joblib.dump(scaler, path / "scaler.pkl")
 
+    # Serialize model & scaler as binary for MongoDB storage
+    model_binary = Binary(pickle.dumps(model))
+    scaler_binary = Binary(pickle.dumps(scaler))
+
     meta = {
         "model_name": "RidgeRegression",
         "target": "pm2_5",
@@ -101,11 +107,15 @@ def save(model, scaler, features, metrics):
         "trained_at": datetime.now().isoformat(),
         "metrics": metrics,
         "features": features,
-        "model_path": str(path)
+        "model_path": str(path),
+        "model_binary": model_binary,
+        "scaler_binary": scaler_binary
     }
 
+    # Save metadata (without binaries) to local JSON
+    meta_local = {k: v for k, v in meta.items() if k not in ("model_binary", "scaler_binary")}
     with open(path / "metadata.json", "w") as f:
-        json.dump(meta, f, indent=2)
+        json.dump(meta_local, f, indent=2)
 
     MongoClient(MONGODB_URI)[DB_NAME][MODEL_REGISTRY_COLLECTION].insert_one(meta)
 

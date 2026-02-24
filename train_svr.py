@@ -4,8 +4,10 @@ from pymongo import MongoClient
 from dotenv import load_dotenv
 import os
 import json
+import pickle
 import joblib
 from datetime import datetime
+from bson import Binary
 from pathlib import Path
 
 from sklearn.svm import SVR
@@ -133,6 +135,10 @@ def save_to_registry(model, scaler, data, metrics):
     joblib.dump(model, model_dir / "model.pkl")
     joblib.dump(scaler, model_dir / "scaler.pkl")
 
+    # Serialize model & scaler as binary for MongoDB storage
+    model_binary = Binary(pickle.dumps(model))
+    scaler_binary = Binary(pickle.dumps(scaler))
+
     metadata = {
         "model_name": "SVR",
         "city": CITY,
@@ -142,18 +148,22 @@ def save_to_registry(model, scaler, data, metrics):
         "target": "pm2_5",
         "n_training_samples": data["n_train"],
         "n_test_samples": data["n_test"],
-        "model_path": str(model_dir)
+        "model_path": str(model_dir),
+        "model_binary": model_binary,
+        "scaler_binary": scaler_binary
     }
 
+    # Save metadata (without binaries) to local JSON
+    meta_local = {k: v for k, v in metadata.items() if k not in ("model_binary", "scaler_binary")}
     with open(model_dir / "metadata.json", "w") as f:
-        json.dump(metadata, f, indent=2)
+        json.dump(meta_local, f, indent=2)
 
     client = MongoClient(MONGODB_URI)
     try:
         db = client[DB_NAME]
         registry = db[MODEL_REGISTRY_COLLECTION]
         registry.insert_one(metadata)
-        print("Model metadata saved to MongoDB registry")
+        print("Model metadata + binaries saved to MongoDB registry")
     finally:
         client.close()
 
